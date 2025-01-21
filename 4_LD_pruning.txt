@@ -1,5 +1,0 @@
-plink --file population.snps.hz.tombul.filtered.pruned.leaf.plk --allow-extra-chr --make-founders --indep-pairwise 150 5 0.5 --out population.snps.hz.tombul.filtered.pruned.leaf 
-
-plink --file population.snps.hz.tombul.filtered.pruned.leaf.plk  --allow-extra-chr --exclude population.snps.hz.tombul.filtered.pruned.leaf.prune.out --recode --out population.snps.hz.tombul.filtered.pruned.leaf
-
-#  I added the suffix 'plk.map' and 'plk.ped' to each output file manually. I used Tassel to convert them back to VCF.
