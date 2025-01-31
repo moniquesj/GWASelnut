@@ -1,0 +1,1 @@
+Here, we store and share the scripts used for data analysis in Salardi-Jost et al. (2025) (DOI: XXXXXX). The collection primarily consists of R scripts, with some routines executed in Bash. Detailed descriptions are provided within the scripts. Raw DNA sequencing reads are available on XXXXX under BioProject accession number XXXXXX.
