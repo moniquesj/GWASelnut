@@ -1,0 +1,12 @@
+# Thinning the dataset
+plink --vcf population.snps.hz.tombul.filtered.leaf.vcf --allow-extra-chr \
+--set-missing-var-ids @:# \
+--maf 0.01 --geno 0.1 --mind 0.5 \
+--thin-count 10000 \
+--recode 12 --out population.snps.hz.tombul.filtered.leaf_thinned
+
+    --maf - this filters based on minor allele frequency - 0.01 in this case.
+    --geno - this filters out any variants where more than X proportion of genotypes are missing data. Here we throw out anything with >10% missing dataset.
+    --mind - this removes any individual with more than 50% missing data.
+
+# I converted the output into a HAPMAP format using Tassel on my computer (population.snps.hz.tombul.filtered.leaf_thinned.hmp.txt).

@@ -1,0 +1,193 @@
+#############################################################################
+##################Indexing Tombul reference genome###########################
+#############################################################################
+bwa index ./GCF_901000735.1_CavTom2PMs-1.0_genomic.fna 
+
+#################################################################################
+############## Mapping the reads to the Tombul reference genome and #############
+############# adding the group information to the SAM file ######################
+#################################################################################
+
+total_files=$(ls *.fq.gz | wc -l)
+arr=( $(ls *.fq.gz) )
+
+echo "mapping started" >> map.log
+echo "---------------" >> map.log
+
+
+for ((i=0; i<$total_files; i+=2))
+{
+  sample_name=$(echo ${arr[$i]} | awk -F ".fq.gz" '{print $1}')
+  echo "[mapping running for] $sample_name"
+  printf "\n"
+  rg_line="@RG\tID:$sample_name\tSM:$sample_name"
+  echo "bwa mem -t 10 -R \"$rg_line\" ./Reference_Tombul/GCF_901000735.1_CavTom2PMs-1.0_genomic.fna ${arr[$i]} ${arr[$i+1]} > $sample_name.sam" >> map.log
+  bwa mem -t 10 -R "$rg_line" ./Reference_Tombul/GCF_901000735.1_CavTom2PMs-1.0_genomic.fna ${arr[$i]} ${arr[$i+1]} > $sample_name.sam
+}
+
+#Counting number of files that end in *.fq.gz.
+#Assigning the names of the files to an array called arr.
+#Just printing a message to screen and append to log file called map.log.
+#Just printing a message to screen and append to log file called map.log.
+#A for loop to step through the array taking two file names at a time (this is a paired-end dataset so forward and reverse pair, will need to change depending on your use case) until you take all elements from array. Array elements start at position [0].
+#the rg_line is adding the read group information to each sample. in this case, it will add the name of forward sample as the name of the pair.
+#sample_name extracts the actual name of the sample (stuff before first .fq.gz e.g. Sample1 from Sample1.fq.gz)
+#Printing the name you are working with to screen with echo. -t is the number of threads from the server it should use for the analysis. 
+#-R is adding the group information
+#Printing the actual command you are working with. Name of output file created using $sample_name as $sample_name.sam. 
+#Run the actual bwa mem command.
+
+
+#################################################################################
+############## Converting all sam files to bam format ###########################
+#################################################################################
+for file in *.sam; do
+output=$(basename $file .sam).bam
+samtools view -bS $file > $output
+done
+
+#################################################################################
+############## Filtering bam files for mapping quality ##########################
+#################################################################################
+# filter bam files for mapping quality 5 (repeat for each sample)
+#-@ is the number of threads being used
+#Mapping qualities are a measure of how likely a given sequence alignment to its reported location is correct. 
+#If a read's mapping quality is low (especially if it is zero, or mapQ 0 for short) the read maps to multiple locations on the genome
+#(they are multi-hit or multi-mapping reads), and we can't be sure whether the reported location is the correct one.
+
+#bwa mem (local alignment) can always report more than one location for a mapped read
+#its definition of a secondary alignment is different (and a bit non-standard)
+#if one part of a read maps to one location and another part maps somewhere else (e.g. because of RNA splicing), the longer alignment is marked as primary and the shorter as secondary.
+#there is no way to disable reporting of secondary alignments with bwa mem.
+#but they can be filtered from the sorted BAM with -F 0x100 (secondary alignment flag = 0).
+
+for file in *.bam; do
+  output=$(basename "$file" .bam)_q5.bam
+  samtools view -q 5 -@ 10 "$file" -o "$output"
+done
+
+ls -1 *_q5.bam | wc -l #checking how many files were generated
+
+#################################################################################
+############## Sorting bam files ################################################
+#################################################################################
+#Sorted BAM has the data sorted by chromosomes/contigs/scaffolds whatever is in your reference genome. 
+#In order to efficiently display/access the data the BAM file has to be sorted.
+
+for file in *_q5.bam; do
+  samtools sort "$file" -o "${file%_q5.bam}_q5_sorted.bam" -@ 10
+done
+
+#################################################################################
+############## Indexing bam files ###############################################
+#################################################################################
+#The index file has a ".bai" extension and allows for efficient random access to the BAM file. 
+#It is essential for quickly retrieving specific regions of the genome from the BAM file, which is important in various genomics analyses
+#The output are .bai files
+
+for file in *_q5_sorted.bam; do
+  samtools index "$file" -@ 10
+done
+
+#################################################################################
+############## Calling SNPs with Stacks #########################################
+#################################################################################
+#For reference-aligned analyses, the gstacks program is the first program executed and it will 
+#create loci by incorporating single- or paired-end reads that have been aligned to the reference genome and sorted, using a sliding window algorithm.
+
+gstacks -B 100-HZ102-P2b-D01.1_q5_sorted.bam -B 173-HZ176-P2b-E10.1_q5_sorted.bam -B 244-HZ249-P3b-D07.1_q5_sorted.bam -B 60-HZ320-P1-D08.1_q5_sorted.bam -B 101-HZ103_39-HZ103.1_q5_sorted.bam -B 174-HZ177-P2b-F10.1_q5_sorted.bam -B 245-HZ250-P3b-E07.1_q5_sorted.bam -B 61-HZ063-P1b-E08.1_q5_sorted.bam -B 102-HZ104-P2b-F01.1_q5_sorted.bam -B 175-HZ178-P2b-G10.1_q5_sorted.bam -B 246-HZ251-P3b-F07.1_q5_sorted.bam -B 61-HZ321-P1-E08.1_q5_sorted.bam -B 103-HZ105-P2b-G01.1_q5_sorted.bam -B 176-HZ179-P2b-H10.1_q5_sorted.bam -B 247-HZ252-P3b-G07.1_q5_sorted.bam -B 62-HZ064-P1b-F08.1_q5_sorted.bam -B 104-HZ106-P2b-H01.1_q5_sorted.bam -B 177-HZ180-P2b-A11.1_q5_sorted.bam -B 248-HZ253-P3b-H07.1_q5_sorted.bam -B 62-HZ322-P1-F08.1_q5_sorted.bam -B 105-HZ107-P2b-A02.1_q5_sorted.bam -B 178-HZ181-P2b-B11.1_q5_sorted.bam -B 249-HZ254-P3b-A08.1_q5_sorted.bam -B 63-HZ065-P1b-G08.1_q5_sorted.bam -B 106-HZ108-P2b-B02.1_q5_sorted.bam -B 179-HZ182-P2b-C11.1_q5_sorted.bam -B 24-HZ025-P1b-H03.1_q5_sorted.bam -B 63-HZ323-P1-G08.1_q5_sorted.bam -B 107-HZ109-P2b-C02.1_q5_sorted.bam -B 17-HZ018-P1b-A03.1_q5_sorted.bam -B 24-HZ191-NUT-P1-H03.1_q5_sorted.bam -B 64-HZ066-P1b-H08.1_q5_sorted.bam -B 108-HZ110-P2b-D02.1_q5_sorted.bam -B 17-HZ165-NUT-P1-A03.1_q5_sorted.bam -B 250-HZ255-P3b-B08.1_q5_sorted.bam -B 64-HZ324-P1-H08.1_q5_sorted.bam -B 109-HZ111-P2b-E02.1_q5_sorted.bam -B 180-HZ183-P2b-D11.1_q5_sorted.bam -B 251-HZ256-P3b-C08.1_q5_sorted.bam -B 65-HZ067-P1b-A09.1_q5_sorted.bam -B 10-HZ010-P1b-B02.1_q5_sorted.bam -B 181-HZ184-P2b-E11.1_q5_sorted.bam -B 252-HZ257-P3b-D08.1_q5_sorted.bam -B 65-HZ325-P1-A09.1_q5_sorted.bam -B 10-HZ125-NUT-P1-B02.1_q5_sorted.bam -B 182-HZ185-P2b-F11.1_q5_sorted.bam -B 253-HZ258-P3b-E08.1_q5_sorted.bam -B 66-HZ068-P1b-B09.1_q5_sorted.bam -B 110-HZ112-P2b-F02.1_q5_sorted.bam -B 183-HZ186-P2b-G11.1_q5_sorted.bam -B 254-HZ259-P3b-F08.1_q5_sorted.bam -B 66-HZ326-P1-B09.1_q5_sorted.bam -B 111-HZ113-P2b-G02.1_q5_sorted.bam -B 184-HZ187-P2b-H11.1_q5_sorted.bam -B 255-HZ260-P3b-G08.1_q5_sorted.bam -B 67-HZ069-P1b-C09.1_q5_sorted.bam -B 112-HZ114-P2b-H02.1_q5_sorted.bam -B 185-HZ188-P2b-A12.1_q5_sorted.bam -B 256-HZ261-P3b-H08.1_q5_sorted.bam -B 67-HZ327-P1-C09.1_q5_sorted.bam -B 113-HZ115-P2b-A03.1_q5_sorted.bam -B 186-HZ189-P2b-B12.1_q5_sorted.bam -B 257-HZ262-P3b-A09.1_q5_sorted.bam -B 68-HZ070-P1b-D09.1_q5_sorted.bam -B 114-HZ116-P2b-B03.1_q5_sorted.bam -B 187-HZ190-P2b-C12.1_q5_sorted.bam -B 258-HZ263-P3b-B09.1_q5_sorted.bam -B 68-HZ328-P1-D09.1_q5_sorted.bam -B 115-HZ117-P2b-C03.1_q5_sorted.bam -B 188-HZ191-P2b-D12.1_q5_sorted.bam -B 259-HZ264-P3b-C09.1_q5_sorted.bam -B 69-HZ071-P1b-E09.1_q5_sorted.bam -B 116-HZ118-P2b-D03.1_q5_sorted.bam -B 189-HZ192-P2b-E12.1_q5_sorted.bam -B 25-HZ026-P1b-A04.1_q5_sorted.bam -B 69-HZ329-P1-E09.1_q5_sorted.bam -B 117-HZ119-P2b-E03.1_q5_sorted.bam -B 18-HZ019-P1b-B03.1_q5_sorted.bam -B 25-HZ194-NUT-P1-A04.1_q5_sorted.bam -B 6-HZ006-P1b-F01.1_q5_sorted.bam -B 118-HZ120_40-HZ120.1_q5_sorted.bam -B 18-HZ167-NUT-P1-B03.1_q5_sorted.bam -B 260-HZ265-P3b-D09.1_q5_sorted.bam -B 6-HZ112-NUT-P1-F01.1_q5_sorted.bam -B 119-HZ121_41-HZ121.1_q5_sorted.bam -B 190-HZ193-P2b-F12.1_q5_sorted.bam -B 261-HZ266-P3b-E09.1_q5_sorted.bam -B 70-HZ072-P1b-F09.1_q5_sorted.bam -B 11-HZ011-P1b-C02.1_q5_sorted.bam -B 191-HZ194-P2b-G12.1_q5_sorted.bam -B 263-HZ268-P3b-G09.1_q5_sorted.bam -B 70-HZ330-P1-F09.1_q5_sorted.bam -B 11-HZ131-NUT-P1-C02.1_q5_sorted.bam -B 192-HZ195-P2b-H12.1_q5_sorted.bam -B 267-HZ272-P3b-C10.1_q5_sorted.bam -B 71-HZ073-P1b-G09.1_q5_sorted.bam -B 120-HZ122_42-HZ122.1_q5_sorted.bam -B 193-HZ196-P3b-A01.1_q5_sorted.bam -B 268-HZ273-P3b-D10.1_q5_sorted.bam -B 71-HZ331-P1-G09.1_q5_sorted.bam -B 121-HZ123_43-HZ123.1_q5_sorted.bam -B 194-HZ197-P3b-B01.1_q5_sorted.bam -B 26-HZ028-P1b-B04.1_q5_sorted.bam -B 72-HZ074-P1b-H09.1_q5_sorted.bam -B 122-HZ124-P2b-B04.1_q5_sorted.bam -B 195-HZ198-P3b-C01.1_q5_sorted.bam -B 26-HZ199-NUT-P1-B04.1_q5_sorted.bam -B 72-HZ332-P1-H09.1_q5_sorted.bam -B 123-HZ125-P2b-C04.1_q5_sorted.bam -B 196-HZ199-P3b-D01.1_q5_sorted.bam -B 276-HZ281-P3b-D11.1_q5_sorted.bam -B 73-HZ075-P1b-A10.1_q5_sorted.bam -B 124-HZ126_44-HZ126.1_q5_sorted.bam -B 197-HZ200-P3b-E01.1_q5_sorted.bam -B 277-HZ282-P3b-E11.1_q5_sorted.bam -B 73-HZ333-P1-A10.1_q5_sorted.bam -B 125-HZ127-P2b-E04.1_q5_sorted.bam -B 198-HZ201-P3b-F01.1_q5_sorted.bam -B 279-HZ284-P3b-G11.1_q5_sorted.bam -B 74-HZ076-P1b-B10.1_q5_sorted.bam -B 126-HZ128-P2b-F04.1_q5_sorted.bam -B 199-HZ202-P3b-G01.1_q5_sorted.bam -B 27-HZ029-P1b-C04.1_q5_sorted.bam -B 74-HZ334-P1-B10.1_q5_sorted.bam -B 127-HZ129-P2b-G04.1_q5_sorted.bam -B 19-HZ020_33-HZ020.1_q5_sorted.bam -B 27-HZ200-NUT-P1-C04.1_q5_sorted.bam -B 75-HZ077-P1b-C10.1_q5_sorted.bam -B 128-HZ130-P2b-H04.1_q5_sorted.bam -B 19-HZ168-NUT-P1-C03.1_q5_sorted.bam -B 281-HZ286-P3b-A12.1_q5_sorted.bam -B 75-HZ335-P1-C10.1_q5_sorted.bam -B 129-HZ131-P2b-A05.1_q5_sorted.bam -B 1-HZ001-P1b-A01.1_q5_sorted.bam -B 284-HZ289-P3b-D12.1_q5_sorted.bam -B 76-HZ078-P1b-D10.1_q5_sorted.bam -B 12-HZ012_31-HZ012.1_q5_sorted.bam -B 1-HZ015-NUT-P1-A01.1_q5_sorted.bam -B 28-HZ030_35-HZ030.1_q5_sorted.bam -B 76-HZ336-P1-D10.1_q5_sorted.bam -B 12-HZ136-NUT-P1-D02.1_q5_sorted.bam -B 200-HZ203-P3b-H01.1_q5_sorted.bam -B 28-HZ201-NUT-P1-D04.1_q5_sorted.bam -B 77-HZ079-P1b-E10.1_q5_sorted.bam -B 130-HZ132-P2b-B05.1_q5_sorted.bam -B 201-HZ204-P3b-A02.1_q5_sorted.bam -B 29-HZ031_36-HZ031.1_q5_sorted.bam -B 77-HZ337-P1-E10.1_q5_sorted.bam -B 131-HZ133-P2b-C05.1_q5_sorted.bam -B 202-HZ205-P3b-B02.1_q5_sorted.bam -B 29-HZ204-NUT-P1-E04.1_q5_sorted.bam -B 78-HZ080-P1b-F10.1_q5_sorted.bam -B 132-HZ134-P2b-D05.1_q5_sorted.bam -B 203-HZ206-P3b-C02.1_q5_sorted.bam -B 2-HZ002-P1b-B01.1_q5_sorted.bam -B 78-HZ338-P1-F10.1_q5_sorted.bam -B 133-HZ136-P2b-E05.1_q5_sorted.bam -B 204-HZ209-P3b-D02.1_q5_sorted.bam -B 2-HZ037-NUT-P1-B01.1_q5_sorted.bam -B 79-HZ081-P1b-G10.1_q5_sorted.bam -B 134-HZ137-P2b-F05.1_q5_sorted.bam -B 205-HZ210-P3b-E02.1_q5_sorted.bam -B 30-HZ032-P1b-F04.1_q5_sorted.bam -B 79-HZ339-P1-G10.1_q5_sorted.bam -B 135-HZ138-P2b-G05.1_q5_sorted.bam -B 206-HZ211_262-HZ267.1_q5_sorted.bam -B 31-HZ033-P1b-G04.1_q5_sorted.bam -B 7-HZ007-P1b-G01.1_q5_sorted.bam -B 136-HZ139-P2b-H05.1_q5_sorted.bam -B 207-HZ212-P3b-G02.1_q5_sorted.bam -B 32-HZ034-P1b-H04.1_q5_sorted.bam -B 7-HZ114-NUT-P1-G01.1_q5_sorted.bam -B 137-HZ140-P2b-A06.1_q5_sorted.bam -B 208-HZ213_264-HZ269.1_q5_sorted.bam -B 33-HZ035-P1b-A05.1_q5_sorted.bam -B 80-HZ082-P1b-H10.1_q5_sorted.bam -B 138-HZ141-P2b-B06.1_q5_sorted.bam -B 209-HZ214_265-HZ270.1_q5_sorted.bam -B 34-HZ036-P1b-B05.1_q5_sorted.bam -B 80-HZ340-P1-H10.1_q5_sorted.bam -B 139-HZ142-P2b-C06.1_q5_sorted.bam -B 20-HZ021-P1b-D03.1_q5_sorted.bam -B 35-HZ037-P1b-C05.1_q5_sorted.bam -B 81-HZ083-P1b-A11.1_q5_sorted.bam -B 13-HZ013-P1b-E02.1_q5_sorted.bam -B 20-HZ169-NUT-P1-D03.1_q5_sorted.bam -B 36-HZ038-P1b-D05.1_q5_sorted.bam -B 81-HZ341-P1-A11.1_q5_sorted.bam -B 13-HZ139-NUT-P1-E02.1_q5_sorted.bam -B 210-HZ215_266-HZ271.1_q5_sorted.bam -B 37-HZ039-P1b-E05.1_q5_sorted.bam -B 82-HZ084-P1b-B11.1_q5_sorted.bam -B 140-HZ143-P2b-D06.1_q5_sorted.bam -B 211-HZ216-P3b-C03.1_q5_sorted.bam -B 38-HZ040-P1b-F05.1_q5_sorted.bam -B 82-HZ342-P1-B11.1_q5_sorted.bam -B 141-HZ144-P2b-E06.1_q5_sorted.bam -B 212-HZ217-P3b-D03.1_q5_sorted.bam -B 39-HZ041-P1b-G05.1_q5_sorted.bam -B 83-HZ085-P1b-C11.1_q5_sorted.bam -B 142-HZ145-P2b-F06.1_q5_sorted.bam -B 213-HZ218_269-HZ2741.1_q5_sorted.bam -B 3-HZ003-P1b-C01.1_q5_sorted.bam -B 83-HZ343-P1-C11.1_q5_sorted.bam -B 143-HZ146-P2b-G06.1_q5_sorted.bam -B 214-HZ219_270-HZ275.1_q5_sorted.bam -B 3-HZ068-NUT-P1-C01.1_q5_sorted.bam -B 84-HZ086-P1b-D11.1_q5_sorted.bam -B 144-HZ147-P2b-H06.1_q5_sorted.bam -B 215-HZ220_271-HZ276.1_q5_sorted.bam -B 40-HZ042-P1b-H05.1_q5_sorted.bam -B 84-HZ344-P1-D11.1_q5_sorted.bam -B 145-HZ148-P2b-A07.1_q5_sorted.bam -B 216-HZ221_272-HZ277.1_q5_sorted.bam -B 41-HZ043-P1b-A06.1_q5_sorted.bam -B 85-HZ087-P1b-E11.1_q5_sorted.bam -B 146-HZ149-P2b-B07.1_q5_sorted.bam -B 217-HZ222_273-HZ278.1_q5_sorted.bam -B 42-HZ044-P1b-B06.1_q5_sorted.bam -B 85-HZ345-P1-E11.1_q5_sorted.bam -B 147-HZ150-P2b-C07.1_q5_sorted.bam -B 218-HZ223_274-HZ279.1_q5_sorted.bam -B 43-HZ045-P1b-C06.1_q5_sorted.bam -B 86-HZ088_38-HZ088.1_q5_sorted.bam -B 148-HZ151-P2b-D07.1_q5_sorted.bam -B 219-HZ224-P3b-C04.1_q5_sorted.bam -B 44-HZ046-P1b-D06.1_q5_sorted.bam -B 86-HZ346-P1-F11.1_q5_sorted.bam -B 149-HZ152-P2b-E07.1_q5_sorted.bam -B 21-HZ022-P1b-E03.1_q5_sorted.bam -B 45-HZ047-P1b-E06.1_q5_sorted.bam -B 87-HZ089-P1b-G11.1_q5_sorted.bam -B 14-HZ015_32-HZ015.1_q5_sorted.bam -B 21-HZ170-NUT-P1-E03.1_q5_sorted.bam -B 46-HZ048-P1b-F06.1_q5_sorted.bam -B 87-HZ347-P1-G11.1_q5_sorted.bam -B 14-HZ140-NUT-P1-F02.1_q5_sorted.bam -B 220-HZ225-P3b-D04.1_q5_sorted.bam -B 47-HZ049-P1b-G06.1_q5_sorted.bam -B 88-HZ090-P1b-H11.1_q5_sorted.bam -B 150-HZ153-P2b-F07.1_q5_sorted.bam -B 221-HZ226_275-HZ280.1_q5_sorted.bam -B 48-HZ050-P1b-H06.1_q5_sorted.bam -B 88-HZ348-P1-H11.1_q5_sorted.bam -B 151-HZ154_45-HZ154.1_q5_sorted.bam -B 222-HZ227-P3b-F04.1_q5_sorted.bam -B 49-HZ051-P1b-A07.1_q5_sorted.bam -B 89-HZ091-P1b-A12.1_q5_sorted.bam -B 152-HZ155_46-HZ155.1_q5_sorted.bam -B 223-HZ228-P3b-G04.1_q5_sorted.bam -B 4-HZ004-P1b-D01.1_q5_sorted.bam -B 89-HZ349-P1-A12.1_q5_sorted.bam -B 153-HZ156-P2b-A08.1_q5_sorted.bam -B 224-HZ229-P3b-H04.1_q5_sorted.bam -B 4-HZ076-NUT-P1-D01.1_q5_sorted.bam -B 8-HZ008-P1b-H01.1_q5_sorted.bam -B 154-HZ157-P2b-B08.1_q5_sorted.bam -B 225-HZ230_278-HZ283.1_q5_sorted.bam -B 50-HZ052-P1b-B07.1_q5_sorted.bam -B 8-HZ115-NUT-P1-H01.1_q5_sorted.bam -B 155-HZ158_47-HZ158.1_q5_sorted.bam -B 226-HZ231-P3b-B05.1_q5_sorted.bam -B 50-HZ310-P1-B07.1_q5_sorted.bam -B 90-HZ092-P1b-B12.1_q5_sorted.bam -B 156-HZ159-P2b-D08.1_q5_sorted.bam -B 227-HZ232-P3b-C05.1_q5_sorted.bam -B 51-HZ053-P1b-C07.1_q5_sorted.bam -B 90-HZ350-P1-B12.1_q5_sorted.bam -B 157-HZ160_48-HZ160.1_q5_sorted.bam -B 228-HZ233-P3b-D05.1_q5_sorted.bam -B 51-HZ311-P1-C07.1_q5_sorted.bam -B 91-HZ093-P1b-C12.1_q5_sorted.bam -B 158-HZ161_49-HZ161.1_q5_sorted.bam -B 229-HZ234_280-HZ285.1_q5_sorted.bam -B 52-HZ054-P1b-D07.1_q5_sorted.bam -B 91-HZ351-P1-C12.1_q5_sorted.bam -B 159-HZ162-P2b-G08.1_q5_sorted.bam -B 22-HZ023_34-HZ023.1_q5_sorted.bam -B 52-HZ312-P1-D07.1_q5_sorted.bam -B 92-HZ094-P1b-D12.1_q5_sorted.bam -B 15-HZ016-P1b-G02.1_q5_sorted.bam -B 22-HZ175-NUT-P1-F03.1_q5_sorted.bam -B 53-HZ055-P1b-E07.1_q5_sorted.bam -B 92-HZ352-P1-D12.1_q5_sorted.bam -B 15-HZ144-NUT-P1-G02.1_q5_sorted.bam -B 230-HZ235-P3b-F05.1_q5_sorted.bam -B 53-HZ313-P1-E07.1_q5_sorted.bam -B 93-HZ095-P1b-E12.1_q5_sorted.bam -B 160-HZ163-P2b-H08.1_q5_sorted.bam -B 231-HZ236_282-HZ287.1_q5_sorted.bam -B 54-HZ056-P1b-F07.1_q5_sorted.bam -B 93-HZ353-P1-E12.1_q5_sorted.bam -B 161-HZ164-P2b-A09.1_q5_sorted.bam -B 232-HZ237_283-HZ288.1_q5_sorted.bam -B 54-HZ314-P1-F07.1_q5_sorted.bam -B 94-HZ096-P1b-F12.1_q5_sorted.bam -B 162-HZ165-P2b-B09.1_q5_sorted.bam -B 233-HZ238-P3b-A06.1_q5_sorted.bam -B 55-HZ057-P1b-G07.1_q5_sorted.bam -B 94-HZ354-P1-F12.1_q5_sorted.bam -B 163-HZ166-P2b-C09.1_q5_sorted.bam -B 234-HZ239-P3b-B06.1_q5_sorted.bam -B 55-HZ315-P1-G07.1_q5_sorted.bam -B 95-HZ097-P1b-G12.1_q5_sorted.bam -B 164-HZ167-P2b-D09.1_q5_sorted.bam -B 235-HZ240_285-HZ290.1_q5_sorted.bam -B 56-HZ058-P1b-H07.1_q5_sorted.bam -B 95-HZ355-P1-G12.1_q5_sorted.bam -B 165-HZ168-P2b-E09.1_q5_sorted.bam -B 236-HZ241_286-HZ291.1_q5_sorted.bam -B 56-HZ316-P1-H07.1_q5_sorted.bam -B 96-HZ098-P1b-H12.1_q5_sorted.bam -B 166-HZ169-P2b-F09.1_q5_sorted.bam -B 237-HZ242_287-HZ292.1_q5_sorted.bam -B 57-HZ059-P1b-A08.1_q5_sorted.bam -B 96-HZ356-P1-H12.1_q5_sorted.bam -B 167-HZ170-P2b-G09.1_q5_sorted.bam -B 238-HZ243_288-HZ293.1_q5_sorted.bam -B 57-HZ317-P1-A08.1_q5_sorted.bam -B 97-HZ099-P2b-A01.1_q5_sorted.bam -B 168-HZ171-P2b-H09.1_q5_sorted.bam -B 239-HZ244-P3b-G06.1_q5_sorted.bam -B 58-HZ060-P1b-B08.1_q5_sorted.bam -B 98-HZ100-P2b-B01.1_q5_sorted.bam -B 169-HZ172-P2b-A10.1_q5_sorted.bam -B 23-HZ024-P1b-G03.1_q5_sorted.bam -B 58-HZ318-P1-B08.1_q5_sorted.bam -B 99-HZ101-P2b-C01.1_q5_sorted.bam -B 16-HZ017-P1b-H02.1_q5_sorted.bam -B 23-HZ177-NUT-P1-G03.1_q5_sorted.bam -B 59-HZ061-P1b-C08.1_q5_sorted.bam -B 9-HZ009_30-HZ009.1_q5_sorted.bam -B 16-HZ162-NUT-P1-H02.1_q5_sorted.bam -B 240-HZ245-P3b-H06.1_q5_sorted.bam -B 59-HZ319-P1-C08.1_q5_sorted.bam -B 9-HZ117-NUT-P1-A02.1_q5_sorted.bam -B 170-HZ173-P2b-B10.1_q5_sorted.bam -B 241-HZ246-P3b-A07.1_q5_sorted.bam -B 5-HZ005-P1b-E01.1_q5_sorted.bam -B 171-HZ174-P2b-C10.1_q5_sorted.bam -B 242-HZ247-P3b-B07.1_q5_sorted.bam -B 5-HZ100-NUT-P1-E01.1_q5_sorted.bam -B 172-HZ175-P2b-D10.1_q5_sorted.bam -B 243-HZ248-P3b-C07.1_q5_sorted.bam -B 60-HZ062_37-HZ062.1_q5_sorted.bam -O /MappedReads_Tombul_GStacks -t 8
+
+#################################################################################
+############## Population with Stacks ###########################################
+#################################################################################
+#-min-samples-overall [float] — minimum percentage of individuals across populations required to process a locus.
+#--max-obs-het=0.8 — specify a maximum observed heterozygosity required to process a nucleotide site at a locus (applied to the metapopulation).
+#we chose these values because they were the ones chosen by IGATech when they performed the analysis 
+
+#the populationmap.txt file was created by me. I simply copied the samples names without any extension in one column, and, in the second column,
+#I wrote the word 'hazelnut' for all, as we are considering them all as one population.
+
+populations -P /MappedReads_Tombul_Populations -M /MappedReads_Tombul_GStacks/populationmap.txt --vcf --min-samples-overall=0.75 --max-obs-het=0.8 -t 8
+
+#################################################################################
+############## Adjusting chromosome names with bcftools and Tassel ##############
+#################################################################################
+ 
+grep "^##contig" population.snps.hz.tombul.vcf
+
+##contig=<ID=NC_081541.1,length=50950907>
+##contig=<ID=NC_081542.1,length=50858233>
+##contig=<ID=NC_081543.1,length=39770678>
+##contig=<ID=NC_081544.1,length=36845065>
+##contig=<ID=NC_081545.1,length=36653616>
+##contig=<ID=NC_081546.1,length=30273198>
+##contig=<ID=NC_081547.1,length=30244496>
+##contig=<ID=NC_081548.1,length=25771640>
+##contig=<ID=NC_081549.1,length=23265644>
+##contig=<ID=NC_081550.1,length=22724158>
+##contig=<ID=NC_081551.1,length=22421508>
+##contig=<ID=NC_031855.1,length=159641> #This is actually chloroplast DNA
+
+# Checking how many variants I have
+bcftools view -H population.snps.hz.tombul.vcf  | wc -l
+440890 
+
+# Removing chloroplast DNA
+# zip your vcf with bgzip:
+bgzip population.snps.hz.tombul.vcf
+
+# Sort the VCF file
+bcftools sort population.snps.hz.tombul.vcf.gz -o population.snps.hz.tombul.sorted.vcf.gz
+
+# index your zipped vcf with tabix:
+tabix -p vcf population.snps.hz.tombul.sorted.vcf.gz
+
+# Make a new vcf file with only the selected chromosomes:
+bcftools view population.snps.hz.tombul.sorted.vcf.gz --regions NC_081541.1,NC_081542.1,NC_081543.1,NC_081544.1,NC_081545.1,NC_081546.1,NC_081547.1,NC_081548.1,NC_081549.1,NC_081550.1,NC_081551.1 > population.snps.hz.tombul.vcf
+
+# Checking how many variants I have now
+bcftools view -H population.snps.hz.tombul.vcf  | wc -l
+440856
+
+# Adjusting chromosomes names
+#I used a temporary file to overwrite the output from Population Stacks without having to create a new vcf file
+
+TMP_FILE=$(mktemp)
+bcftools annotate --rename-chrs chrnames.txt -o "${TMP_FILE}" population.snps.hz.tombul.vcf
+mv "${TMP_FILE}" population.snps.hz.tombul.vcf
+
+#chrnames.txt is a table in which the current chromosome names are in column 1, and the new chromosomes names are in column 2.
+
+#################################################################################
+############## Filtering the VCF file ###########################################
+#################################################################################
+
+#How many unfiltered variants do I have?
+screen -S bcftools
+bcftools view -H population.snps.hz.tombul.vcf  | wc -l
+#There are 440856 unfiltered variants.
+
+#Compressing the vcf
+bgzip population.snps.hz.tombul.vcf
+#Indexing with tabix
+tabix -p vcf population.snps.hz.tombul.vcf.gz
+#Sorting the VCF
+bcftools sort -o population.snps.hz.tombul.sorted.vcf.gz population.snps.hz.tombul.vcf.gz
+#Indexing the vcf
+bcftools index population.snps.hz.tombul.sorted.vcf.gz
+
+#Setting where to save the output files
+OUT=/FilteringVCF/output-vcftools
+
+#Calculate mean Depth by Site
+vcftools --gzvcf population.snps.hz.tombul.sorted.vcf.gz --site-mean-depth --out $OUT
+
+# Apply the following filters to remove variants with too low and too high coverage.
+MIN_DEPTH=15
+MAX_DEPTH=68
+
+vcftools --gzvcf population.snps.hz.tombul.sorted.vcf.gz \
+--min-meanDP $MIN_DEPTH --max-meanDP $MAX_DEPTH --recode --stdout | gzip -c > \
+population.snps.hz.tombul.filtered.vcf.gz
+
+

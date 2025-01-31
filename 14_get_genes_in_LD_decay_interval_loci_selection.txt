@@ -1,0 +1,4 @@
+bedtools intersect -a Corylus_avellana.CavTom2PMs-1.0.57.gff3 -b SNP_11_12643567.bed > genes_11_12643567.bed
+bedtools intersect -a Corylus_avellana.CavTom2PMs-1.0.57.gff3 -b SNP_1_13637556.bed > genes_1_13637556.bed
+bedtools intersect -a Corylus_avellana.CavTom2PMs-1.0.57.gff3 -b SNP_6_2083200.bed > genes_6_2083200.bed
+bedtools intersect -a Corylus_avellana.CavTom2PMs-1.0.57.gff3 -b SNP_7_7371795.bed > genes_7_7371795.bed
