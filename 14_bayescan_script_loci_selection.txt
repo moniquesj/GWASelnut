@@ -1,0 +1,14 @@
+##### convert vcf to bayescan input file with PGDSpider
+## Create the population definition file according to the desired groups the samples should be in (cluster2, cluster1_3), with two tab-separated columns, first with sample names, the second with group
+## In PGDSpider interface choose:
+# Data input file format VCF and select the input vcf,
+# Data output file format GESTE/BayeScan and select output file,
+# click on Create/Edit SPID file and specify the following:
+# “take most likely genotype if "PL" or "GL" is given in the genotype field” = yes,
+# “population definition file” = yes and browse to the before-created population definition file,
+# click on the "GESTE/BayeScan – Writer Questions" tab and choose SNP, other settings default.
+# Click save and apply
+# click on convert and wait until process finishes ("translation completed")
+
+##### run bayescan in Linux bash
+./BayeScan2.1_linux64bits ./pop_def_dapc_cluster2_vs_cluster1and3.bayescan -od ./ -out_freq allele_freq -threads 25
